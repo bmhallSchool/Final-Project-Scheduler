@@ -1,0 +1,681 @@
+#include <scheduling.h>
+#include <fstream>
+#include <iostream>
+#include <list>
+#include <queue>
+#include <string>
+#include <stdio.h>
+#include <cstring>
+
+using namespace std;
+
+pqueue_arrival read_workload(string filename) {
+  pqueue_arrival workload;
+  fstream input;
+  input.open(filename);
+  string line;
+  while (getline(input, line)) {
+      Process p;
+      char* lineStr = new char[line.length() + 1];
+      strcpy(lineStr, line.c_str());
+      char* tok = strtok(lineStr, " ");
+      int position = 1;
+      while (tok != NULL) {
+	if (position == 1) {
+	  p.arrival = atoi(tok);
+	}
+	else if (position == 2) {
+	  p.duration = atoi(tok);
+	}
+	else if (position == 3) {
+	  p.status = atoi(tok);
+	}
+	position++;
+	tok = strtok(NULL, " ");
+      }
+      workload.push(p);
+    }
+  return workload;
+}
+
+void show_workload(pqueue_arrival workload) {
+  pqueue_arrival xs = workload;
+  cout << "Workload:" << endl;
+  while (!xs.empty()) {
+    Process p = xs.top();
+    cout << '\t' << p.arrival << ' ' << p.duration << endl;
+    xs.pop();
+  }
+}
+
+void show_processes(list<Process> processes) {
+  list<Process> xs = processes;
+  cout << "Processes:" << endl;
+  while (!xs.empty()) {
+    Process p = xs.front();
+    cout << "\tarrival=" << p.arrival << ", duration=" << p.duration
+         << ", first_run=" << p.first_run << ", completion=" << p.completion
+         << endl;
+    xs.pop_front();
+  }
+}
+
+list<Process> fifo(pqueue_arrival workload) {
+  list<Process> complete;
+  int time = workload.top().arrival;
+  while (!workload.empty()) {
+    Process curP = workload.top();
+    workload.pop();
+    curP.first_run = time;
+    curP.completion = time + curP.duration;
+    time = curP.completion;
+    complete.push_back(curP);
+  }
+  return complete;
+}
+
+list<Process> sjf(pqueue_arrival workload) {
+  list<Process> complete;
+  pqueue_duration newWork;
+  int time = workload.top().arrival;
+  while (!workload.empty() || !newWork.empty()) {
+    while (!workload.empty() && workload.top().arrival <= time) {
+      Process curP = workload.top();
+      newWork.push(curP);
+      workload.pop();
+    }
+    Process durP = newWork.top();
+    newWork.pop();
+    durP.first_run = time;
+    durP.completion = time + durP.duration;
+    time = durP.completion;
+    complete.push_back(durP);
+  }
+  return complete;
+}
+
+list<Process> stcf(pqueue_arrival workload) {
+  list<Process> complete;
+  pqueue_duration newWork;
+  int time = workload.top().arrival;
+  while (!workload.empty() && workload.top().arrival== time) {
+    Process curP = workload.top();
+    curP.first_run = -1;
+    newWork.push(curP);
+    workload.pop();
+  }
+  while (!newWork.empty()) {
+    Process durP = newWork.top();
+    newWork.pop();
+    if (durP.first_run == -1) {
+      durP.first_run = time;
+    }
+    time++;
+    durP.duration--;
+    if (durP.duration == 0) {
+      durP.completion = time;
+      complete.push_back(durP);
+    }
+    else {
+      newWork.push(durP);
+    }
+    while (!workload.empty() && workload.top().arrival== time) {
+      Process curP = workload.top();
+      curP.first_run = -1;
+      newWork.push(curP);
+      workload.pop();
+    }
+  }
+  return complete;
+}
+
+list<Process> rr(pqueue_arrival workload) {
+  list<Process> complete;
+  list<Process> availProc;
+  int time = workload.top().arrival;
+  while (!workload.empty() && workload.top().arrival == time) {
+    Process curP = workload.top();
+    curP.first_run = -1;
+    availProc.push_back(curP);
+    workload.pop();
+  }
+  while (!availProc.empty()) {
+    Process rrP = availProc.front();
+    availProc.pop_front();
+    if (rrP.first_run == -1) {
+      rrP.first_run = time;
+    }
+    time++;
+    rrP.duration--;
+    if (rrP.duration == 0){
+      rrP.completion = time;
+      complete.push_back(rrP);
+    }
+    else {
+      availProc.push_back(rrP);
+    }
+    while (!workload.empty() && workload.top().arrival == time) {
+      Process curP = workload.top();
+      curP.first_run = -1;
+      availProc.push_back(curP);
+      workload.pop();
+    }
+  }
+  return complete;
+}
+
+float avg_turnaround(list<Process> processes) {
+  float dur = 0;
+  float size = 0;
+  while (!processes.empty()) {
+    size++;
+    Process curP = processes.front();
+    processes.pop_front();
+    dur += (float) curP.completion - (float) curP.arrival;
+  }
+  return dur/size;
+}
+
+float avg_response(list<Process> processes) {
+  float wait = 0;
+  float size = 0;
+  while (!processes.empty()) {
+    size++;
+    Process curP = processes.front();
+    processes.pop_front();
+    wait += (float) curP.first_run - (float) curP.arrival;
+  }
+  return wait/size;
+}
+
+float avg_first_comp(list<Process> processes) {
+  float dur = 0;
+  float size = 0;
+  while (!processes.empty()) {
+    size++;
+    Process curP = processes.front();
+    processes.pop_front();
+    dur += (float) curP.completion - (float) curP.first_run;
+  }
+  return dur/size;
+}
+
+void show_metrics(list<Process> processes) {
+  float avg_t = avg_turnaround(processes);
+  float avg_r = avg_response(processes);
+  float avg_fc = avg_first_comp(processes);
+  show_processes(processes);
+  cout << '\n';
+  cout << "Average Turnaround Time: " << avg_t << endl;
+  cout << "Average Response Time:   " << avg_r << endl;
+  cout << "Average Duration Time:   " << avg_fc << endl;
+}
+
+list<Process> ljf(pqueue_arrival workload) {
+  list<Process> complete;//uses same approach as sjf but chooses the longest job, relies on queue giving priority to greater duration
+  pqueue_durLong newWork;
+  int time = workload.top().arrival;
+  while (!workload.empty() || !newWork.empty()) {
+    while (!workload.empty() && workload.top().arrival <= time) {
+      Process curP = workload.top();
+      newWork.push(curP);
+      workload.pop();
+    }
+    Process durP = newWork.top();
+    newWork.pop();
+    durP.first_run = time;
+    durP.completion = time + durP.duration;
+    time = durP.completion;
+    complete.push_back(durP);
+  }
+  return complete;
+}
+
+list<Process> ltcf(pqueue_arrival workload) {
+  list<Process> complete; //same approach as stcf but relies on queue that gives priority on longest duration left
+  pqueue_durLong newWork;
+  int time = workload.top().arrival;
+  while (!workload.empty() && workload.top().arrival== time) {
+    Process curP = workload.top();
+    curP.first_run = -1;
+    newWork.push(curP);
+    workload.pop();
+  }
+  while (!newWork.empty()) {
+    Process durP = newWork.top();
+    newWork.pop();
+    if (durP.first_run == -1) {
+      durP.first_run = time;
+    }
+    time++;
+    durP.duration--;
+    if (durP.duration == 0) {
+      durP.completion = time;
+      complete.push_back(durP);
+    }
+    else {
+      newWork.push(durP);
+    }
+    while (!workload.empty() && workload.top().arrival== time) {
+      Process curP = workload.top();
+      curP.first_run = -1;
+      newWork.push(curP);
+      workload.pop();
+    }
+  }
+  return complete;
+}
+
+list<Process> pbs(pqueue_arrival workload) {
+  list<Process> complete; //takes the highest priority process in the queue and runs it to completion then repeats 
+  pqueue_jobStatus newWork; //queue 1 is intensive, 4 is interactive; higher priority to higher status value
+  int time = workload.top().arrival;
+  while (!workload.empty() || !newWork.empty()) {
+    while (!workload.empty() && workload.top().arrival <= time) {
+      Process curP = workload.top();
+      newWork.push(curP);
+      workload.pop();
+    }
+    Process durP = newWork.top();
+    newWork.pop();
+    durP.first_run = time;
+    durP.completion = time + durP.duration;
+    time = durP.completion;
+    complete.push_back(durP);
+  }
+  return complete;
+}
+
+list<Process> mlfqFive(pqueue_arrival workload) {
+  list<Process> complete;//uses 4 priorities, interactive given highest priority, jobs run for duration or for specified timeSlice
+  list<Process> levelOne;//lowest priority (intensive)
+  list<Process> levelTwo;
+  list<Process> levelThree;
+  list<Process> levelFour;//highest priority (interactive)
+  int time = workload.top().arrival;
+  int timeSlice = 5;
+  int timeSinceBoost = 0;
+  int boostPeriod = 5; //all processes receive a boost to highest priority
+  while (!workload.empty() || !levelOne.empty() || !levelTwo.empty() || !levelThree.empty() || !levelFour.empty()) {
+    while (!workload.empty() && workload.top().arrival <= time) { //add all processes that arrived while job was running or curtime
+      Process curP = workload.top();
+      curP.first_run = -1;
+      if (curP.status == 1) { //add the process to its specificied priority level
+	levelOne.push_back(curP);
+      }
+      else if (curP.status == 2) {
+	levelTwo.push_back(curP);
+      }
+      else if (curP.status == 3) {
+	levelThree.push_back(curP);
+      }
+      else {
+	levelFour.push_back(curP);
+      }
+      workload.pop();
+    }
+    Process durP; //take the active process with the highest priority, if none then increment time and continue
+    if (!levelFour.empty()) {
+      durP = levelFour.front();
+      levelFour.pop_front();
+    }
+    else if (!levelThree.empty()) {
+      durP = levelThree.front();
+      levelThree.pop_front();
+    }
+    else if (!levelTwo.empty()) {
+      durP = levelTwo.front();
+      levelTwo.pop_front();
+    }
+    else if (!levelOne.empty()) {
+      durP = levelOne.front();
+      levelOne.pop_front();
+    }
+    else {
+      time++;
+      timeSinceBoost++;
+      if (timeSinceBoost == boostPeriod) { //implement boost and move all active processes to queue 4 to allow processes with low priority to run
+	while (!levelOne.empty()) {
+	  Process tempP = levelOne.front();
+	  levelOne.pop_front();
+	  tempP.status = 4;
+	  levelFour.push_back(tempP);
+	}
+	while (!levelTwo.empty()) {
+	  Process tempP = levelTwo.front();
+	  levelTwo.pop_front();
+	  tempP.status = 4;
+	  levelFour.push_back(tempP);
+	}
+	while (!levelThree.empty()) {
+	  Process tempP = levelThree.front();
+	  levelThree.pop_front();
+	  tempP.status = 4;
+	  levelFour.push_back(tempP);
+	}
+	timeSinceBoost = 0;
+      }
+      continue;
+    }
+    if (durP.first_run == -1) { //first time a process is run store the time
+      durP.first_run = time;
+    }
+    if (timeSlice < durP.duration) { //process won't be completed in a single timeslice
+      for (int j = 0; j < timeSlice; j++) {
+	time++;
+	timeSinceBoost++;
+	durP.duration--;
+	if (timeSinceBoost == boostPeriod) { //boost occurs during process, which stops the process adds it back and then boosts
+	  switch (durP.status) {
+	  case 1:
+	    levelOne.push_back(durP);
+	    break;
+	  case 2:
+	    levelTwo.push_back(durP);
+	    break;
+	  case 3:
+	    levelThree.push_back(durP);
+	    break;
+	  default:
+	    levelFour.push_back(durP);
+	    break;
+	  }
+	  while (!levelOne.empty()) {
+	    Process tempP = levelOne.front();
+	    levelOne.pop_front();
+	    tempP.status = 4;
+	    levelFour.push_back(tempP);
+	  }
+	  while (!levelTwo.empty()) {
+	    Process tempP = levelTwo.front();
+	    levelTwo.pop_front();
+	    tempP.status = 4;
+	    levelFour.push_back(tempP);
+	  }
+	  while (!levelThree.empty()) {
+	    Process tempP = levelThree.front();
+	    levelThree.pop_front();
+	    tempP.status = 4;
+	    levelFour.push_back(tempP);
+	  }
+	  timeSinceBoost = 0;
+	  break;
+	}
+      }
+      if (timeSinceBoost == 0) { //boost stops the process from running and the new highest priority process must be run, so continue
+	continue;
+      }
+    }
+    else {
+      while (durP.duration > 0) { //case where the process will complete in the given timeSlice
+	time++;
+	timeSinceBoost++;
+	durP.duration--;
+	if (timeSinceBoost == boostPeriod) { //same stop the process and if it hasn't completed then return to queue and boost
+	  if (durP.duration != 0) {
+	    switch (durP.status) {
+	    case 1:
+	      levelOne.push_back(durP);
+	      break;
+	    case 2:
+	      levelTwo.push_back(durP);
+	      break;
+	    case 3:
+	      levelThree.push_back(durP);
+	      break;
+	    default:
+	      levelFour.push_back(durP);
+	      break;
+	    }
+	  }
+	  else { //case where the process has just completed and isn't readded to the queues but is added to complete
+	    durP.completion = time;
+	    complete.push_back(durP);
+	  }
+          while (!levelOne.empty()) { //boost
+            Process tempP = levelOne.front();
+            levelOne.pop_front();
+            tempP.status = 4;
+            levelFour.push_back(tempP);
+          }
+          while (!levelTwo.empty()) {
+            Process tempP = levelTwo.front();
+            levelTwo.pop_front();
+            tempP.status = 4;
+            levelFour.push_back(tempP);
+          }
+          while (!levelThree.empty()) {
+            Process tempP = levelThree.front();
+            levelThree.pop_front();
+            tempP.status = 4;
+            levelFour.push_back(tempP);
+          }
+          timeSinceBoost = 0;
+	  break;
+        }
+      }
+      if (timeSinceBoost == 0) { //boost just called need to start with new process
+	continue;
+      }
+      if (durP.duration == 0) { //catch for processes that complete and don't get boosted while running
+	durP.completion = time;
+	complete.push_back(durP);
+      }
+    }
+    if (durP.duration > 0) { //after timeSlice run if process not completed we decrease the processes priority status
+      if (durP.status == 4 && durP.duration > 0) {
+	durP.status = 3;
+	levelThree.push_back(durP);
+      }
+      else if (durP.status == 3 && durP.duration > 0) {
+	durP.status = 2;
+	levelTwo.push_back(durP);
+	}
+      else if (durP.status == 2 && durP.duration > 0) {
+	durP.status = 1;
+	levelOne.push_back(durP);
+      }
+      else if (durP.status == 1 && durP.duration > 0) {
+	levelOne.push_back(durP);
+      }
+    }
+  }
+  return complete;
+}
+
+list<Process> mlfqTen(pqueue_arrival workload) {
+  list<Process> complete;//uses 4 priorities, interactive given highest priority, jobs run for duration or for specified timeSlice
+  list<Process> levelOne;//lowest priority (intensive)
+  list<Process> levelTwo;
+  list<Process> levelThree;
+  list<Process> levelFour;//highest priority (interactive)
+  int time = workload.top().arrival;
+  int timeSlice = 5;
+  int timeSinceBoost = 0;
+  int boostPeriod = 10; //all processes receive a boost to highest priority
+  while (!workload.empty() || !levelOne.empty() || !levelTwo.empty() || !levelThree.empty() || !levelFour.empty()) {
+    while (!workload.empty() && workload.top().arrival <= time) { //add all processes that arrived while job was running or curtime
+      Process curP = workload.top();
+      curP.first_run = -1;
+      if (curP.status == 1) { //add the process to its specificied priority level
+	levelOne.push_back(curP);
+      }
+      else if (curP.status == 2) {
+	levelTwo.push_back(curP);
+      }
+      else if (curP.status == 3) {
+	levelThree.push_back(curP);
+      }
+      else {
+	levelFour.push_back(curP);
+      }
+      workload.pop();
+    }
+    Process durP; //take the active process with the highest priority, if none then increment time and continue
+    if (!levelFour.empty()) {
+      durP = levelFour.front();
+      levelFour.pop_front();
+    }
+    else if (!levelThree.empty()) {
+      durP = levelThree.front();
+      levelThree.pop_front();
+    }
+    else if (!levelTwo.empty()) {
+      durP = levelTwo.front();
+      levelTwo.pop_front();
+    }
+    else if (!levelOne.empty()) {
+      durP = levelOne.front();
+      levelOne.pop_front();
+    }
+    else {
+      time++;
+      timeSinceBoost++;
+      if (timeSinceBoost == boostPeriod) { //implement boost and move all active processes to queue 4 to allow processes with low priority to run
+	while (!levelOne.empty()) {
+	  Process tempP = levelOne.front();
+	  levelOne.pop_front();
+	  tempP.status = 4;
+	  levelFour.push_back(tempP);
+	}
+	while (!levelTwo.empty()) {
+	  Process tempP = levelTwo.front();
+	  levelTwo.pop_front();
+	  tempP.status = 4;
+	  levelFour.push_back(tempP);
+	}
+	while (!levelThree.empty()) {
+	  Process tempP = levelThree.front();
+	  levelThree.pop_front();
+	  tempP.status = 4;
+	  levelFour.push_back(tempP);
+	}
+	timeSinceBoost = 0;
+      }
+      continue;
+    }
+    if (durP.first_run == -1) { //first time a process is run store the time
+      durP.first_run = time;
+    }
+    if (timeSlice < durP.duration) { //process won't be completed in a single timeslice
+      for (int j = 0; j < timeSlice; j++) {
+	time++;
+	timeSinceBoost++;
+	durP.duration--;
+	if (timeSinceBoost == boostPeriod) { //boost occurs during process, which stops the process adds it back and then boosts
+	  switch (durP.status) {
+	  case 1:
+	    levelOne.push_back(durP);
+	    break;
+	  case 2:
+	    levelTwo.push_back(durP);
+	    break;
+	  case 3:
+	    levelThree.push_back(durP);
+	    break;
+	  default:
+	    levelFour.push_back(durP);
+	    break;
+	  }
+	  while (!levelOne.empty()) {
+	    Process tempP = levelOne.front();
+	    levelOne.pop_front();
+	    tempP.status = 4;
+	    levelFour.push_back(tempP);
+	  }
+	  while (!levelTwo.empty()) {
+	    Process tempP = levelTwo.front();
+	    levelTwo.pop_front();
+	    tempP.status = 4;
+	    levelFour.push_back(tempP);
+	  }
+	  while (!levelThree.empty()) {
+	    Process tempP = levelThree.front();
+	    levelThree.pop_front();
+	    tempP.status = 4;
+	    levelFour.push_back(tempP);
+	  }
+	  timeSinceBoost = 0;
+	  break;
+	}
+      }
+      if (timeSinceBoost == 0) { //boost stops the process from running and the new highest priority process must be run, so continue
+	continue;
+      }
+    }
+    else {
+      while (durP.duration > 0) { //case where the process will complete in the given timeSlice
+	time++;
+	timeSinceBoost++;
+	durP.duration--;
+	if (timeSinceBoost == boostPeriod) { //same stop the process and if it hasn't completed then return to queue and boost
+	  if (durP.duration != 0) {
+	    switch (durP.status) {
+	    case 1:
+	      levelOne.push_back(durP);
+	      break;
+	    case 2:
+	      levelTwo.push_back(durP);
+	      break;
+	    case 3:
+	      levelThree.push_back(durP);
+	      break;
+	    default:
+	      levelFour.push_back(durP);
+	      break;
+	    }
+	  }
+	  else { //case where the process has just completed and isn't readded to the queues but is added to complete
+	    durP.completion = time;
+	    complete.push_back(durP);
+	  }
+          while (!levelOne.empty()) { //boost
+            Process tempP = levelOne.front();
+            levelOne.pop_front();
+            tempP.status = 4;
+            levelFour.push_back(tempP);
+          }
+          while (!levelTwo.empty()) {
+            Process tempP = levelTwo.front();
+            levelTwo.pop_front();
+            tempP.status = 4;
+            levelFour.push_back(tempP);
+          }
+          while (!levelThree.empty()) {
+            Process tempP = levelThree.front();
+            levelThree.pop_front();
+            tempP.status = 4;
+            levelFour.push_back(tempP);
+          }
+          timeSinceBoost = 0;
+	  break;
+        }
+      }
+      if (timeSinceBoost == 0) { //boost just called need to start with new process
+	continue;
+      }
+      if (durP.duration == 0) { //catch for processes that complete and don't get boosted while running
+	durP.completion = time;
+	complete.push_back(durP);
+      }
+    }
+    if (durP.duration > 0) {//after timeSlice run if process not completed we decrease the processes priority status
+      if (durP.status == 4 && durP.duration > 0) {
+	durP.status = 3;
+	levelThree.push_back(durP);
+      }
+      else if (durP.status == 3 && durP.duration > 0) {
+	durP.status = 2;
+	levelTwo.push_back(durP);
+      }
+      else if (durP.status == 2 && durP.duration > 0) {
+	durP.status = 1;
+	levelOne.push_back(durP);
+      }
+      else if (durP.status == 1 && durP.duration > 0) {
+	levelOne.push_back(durP);
+      }
+    }
+  }
+  return complete;
+}
